@@ -12,6 +12,7 @@ GameObject:
   - component: {fileID: 9069802436038091996}
   - component: {fileID: 972194381025682922}
   - component: {fileID: 8336241405676715722}
+  - component: {fileID: 5208005385819965207}
   m_Layer: 0
   m_Name: CivilianTarget
   m_TagString: Untagged
@@ -67,7 +68,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 31321ba15b8f8eb4c954353edc038b1d, type: 2}
+  - {fileID: 2100000, guid: c463d8ef29405bf469adcea9e65592a5, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -114,3 +115,15 @@ CapsuleCollider:
   m_Height: 2
   m_Direction: 1
   m_Center: {x: 0, y: 0, z: 0}
+--- !u!114 &5208005385819965207
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2181395437167455230}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0d052e495fdc56e47b5a1513237d668a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::IVRAR.Group02.SensoryStress.TargetTrialMetadata

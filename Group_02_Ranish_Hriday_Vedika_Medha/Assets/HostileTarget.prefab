@@ -12,6 +12,7 @@ GameObject:
   - component: {fileID: 1054842812088785749}
   - component: {fileID: 4752732199189614186}
   - component: {fileID: 2241910999699933480}
+  - component: {fileID: 7297211850400416528}
   m_Layer: 0
   m_Name: HostileTarget
   m_TagString: Untagged
@@ -67,7 +68,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 31321ba15b8f8eb4c954353edc038b1d, type: 2}
+  - {fileID: 2100000, guid: 9fc736951e235734ea63f2f23e1c72ad, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -114,3 +115,15 @@ CapsuleCollider:
   m_Height: 2
   m_Direction: 1
   m_Center: {x: 0, y: 0, z: 0}
+--- !u!114 &7297211850400416528
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4174585872248644432}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0d052e495fdc56e47b5a1513237d668a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::IVRAR.Group02.SensoryStress.TargetTrialMetadata
