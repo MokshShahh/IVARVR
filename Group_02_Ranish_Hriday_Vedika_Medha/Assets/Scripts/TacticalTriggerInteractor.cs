@@ -22,11 +22,17 @@ namespace IVRAR.Group02.SensoryStress
         public AudioSource audioSource;
         public AudioClip clickClip;
 
+        public Group02SessionDirector sessionDirector;
+
+        public ArcadeBlaster arcadeBlaster;
+
         private void Awake()
         {
             if (rayOrigin == null) rayOrigin = transform;
             if (laserPointer == null) laserPointer = GetComponent<LineRenderer>();
             if (audioSource == null) audioSource = GetComponent<AudioSource>();
+            if (sessionDirector == null) sessionDirector = FindObjectOfType<Group02SessionDirector>();
+            if (arcadeBlaster == null) arcadeBlaster = GetComponent<ArcadeBlaster>();
         }
 
         private void Update()
@@ -34,16 +40,38 @@ namespace IVRAR.Group02.SensoryStress
             UpdateLaser();
             if (IsTriggerPressed())
             {
-                PerformEngagement();
+                if (sessionDirector != null && !sessionDirector.IsSessionRunning)
+                {
+                    sessionDirector.StartSession();
+                }
+                else
+                {
+                    PerformEngagement();
+                }
             }
+        }
+
+        public Vector3 GetAimDirection()
+        {
+            var rightDevice = UnityEngine.XR.InputDevices.GetDeviceAtXRNode(UnityEngine.XR.XRNode.RightHand);
+            if (rightDevice.isValid && rightDevice.TryGetFeatureValue(UnityEngine.XR.CommonUsages.deviceRotation, out Quaternion _))
+            {
+                return rayOrigin.forward;
+            }
+            if (Camera.main != null)
+            {
+                return Camera.main.transform.forward;
+            }
+            return rayOrigin.forward;
         }
 
         private void UpdateLaser()
         {
             if (laserPointer == null) return;
             Vector3 start = rayOrigin.position;
-            Vector3 end = start + (rayOrigin.forward * maxRange);
-            if (Physics.Raycast(start, rayOrigin.forward, out RaycastHit hit, maxRange, targetLayerMask))
+            Vector3 direction = GetAimDirection();
+            Vector3 end = start + (direction * maxRange);
+            if (Physics.Raycast(start, direction, out RaycastHit hit, maxRange, targetLayerMask))
             {
                 end = hit.point;
             }
@@ -53,33 +81,44 @@ namespace IVRAR.Group02.SensoryStress
 
         public bool IsTriggerPressed()
         {
-            // Legacy / Standard Input fallback (Immediate Editor playtesting without VR controllers)
-            if (Input.GetMouseButtonDown(0) || Input.GetKeyDown(KeyCode.Space))
+            // 1. Legacy / Standard Input fallback (Mouse / Keyboard)
+            if (Input.GetMouseButtonDown(0) || Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.Return))
                 return true;
 
+            // 2. New Input System
 #if ENABLE_INPUT_SYSTEM
             if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame) return true;
-            if (Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame) return true;
+            if (Keyboard.current != null && (Keyboard.current.spaceKey.wasPressedThisFrame || Keyboard.current.enterKey.wasPressedThisFrame)) return true;
+            if (Gamepad.current != null && (Gamepad.current.buttonSouth.wasPressedThisFrame || Gamepad.current.rightTrigger.wasPressedThisFrame)) return true;
 #endif
+
+            // 3. XR Controller inputs (Meta XR Simulator / Quest HMD)
+            var rightController = UnityEngine.XR.InputDevices.GetDeviceAtXRNode(UnityEngine.XR.XRNode.RightHand);
+            if (rightController.isValid)
+            {
+                if (rightController.TryGetFeatureValue(UnityEngine.XR.CommonUsages.triggerButton, out bool trig) && trig) return true;
+                if (rightController.TryGetFeatureValue(UnityEngine.XR.CommonUsages.primaryButton, out bool prim) && prim) return true;
+                if (rightController.TryGetFeatureValue(UnityEngine.XR.CommonUsages.trigger, out float val) && val > 0.5f) return true;
+            }
+
             return false;
         }
 
         public void PerformEngagement()
         {
-            if (audioSource != null && clickClip != null)
-                audioSource.PlayOneShot(clickClip);
+            Vector3 start = rayOrigin != null ? rayOrigin.position : transform.position;
+            Vector3 direction = GetAimDirection();
 
-            Vector3 start = rayOrigin.position;
-            Vector3 direction = rayOrigin.forward;
-
-            if (Physics.Raycast(start, direction, out RaycastHit hit, maxRange, targetLayerMask))
+            if (arcadeBlaster != null)
             {
-                TargetTrialMetadata target = hit.collider.GetComponentInParent<TargetTrialMetadata>();
-                if (target != null)
-                {
-                    target.RegisterDecision(true);
-                    Debug.Log($"[TacticalTrigger] Engaged target: {target.TrialId} (Hostile={target.IsHostile})");
-                }
+                arcadeBlaster.FireProjectile(start, direction, targetLayerMask);
+            }
+            else
+            {
+                GameObject projObj = new GameObject("Arcade_Projectile");
+                projObj.transform.position = start;
+                ArcadeProjectile proj = projObj.AddComponent<ArcadeProjectile>();
+                proj.Launch(direction, targetLayerMask);
             }
         }
     }

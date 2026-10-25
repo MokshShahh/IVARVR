@@ -1,9 +1,13 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace IVRAR.Group02.SensoryStress
 {
-    /// <summary>Configurable scenario timing, target presentation, low-light settings and sensory cues.</summary>
+    /// <summary>
+    /// Configurable scenario timing, target presentation, low-light settings and sensory cues.
+    /// Manages active concurrent targets (up to 10 active at once) across the 40m x 30m arena.
+    /// </summary>
     public sealed class SensoryStressTargetManager : MonoBehaviour
     {
         [Header("Lighting")]
@@ -28,9 +32,10 @@ namespace IVRAR.Group02.SensoryStress
         public GameObject hostileTargetPrefab;
         public GameObject civilianTargetPrefab;
         public Transform[] spawnAnchors;
-        [Min(0.1f)] public float exposureDurationSeconds = 2.5f;
-        [Min(0.1f)] public float meanInterTargetIntervalSeconds = 3f;
-        [Range(0f, 1f)] public float hostileProbability = 0.5f;
+        [Min(0.1f)] public float exposureDurationSeconds = 7.0f;
+        [Min(0.1f)] public float meanInterTargetIntervalSeconds = 1.0f;
+        [Range(0f, 1f)] public float hostileProbability = 0.80f;
+        public int maxConcurrentTargets = 10;
         public int randomSeed = 2047;
         public ReactionLatencyTelemetryLogger telemetryLogger;
 
@@ -40,11 +45,17 @@ namespace IVRAR.Group02.SensoryStress
         private bool strobeRunning;
         private float originalFogDensity;
         private bool originalFogEnabled;
-        private float originalFlashlightIntensity;
+        private float originalFlashlightIntensity = 2.5f;
         private float originalStrobeIntensity;
         private float originalDirectionalIntensity;
         private float originalAmbientIntensity;
         private int nextTrialIndex;
+
+        private readonly List<GameObject> activeTargetInstances = new List<GameObject>();
+        private readonly HashSet<int> occupiedAnchorIndices = new HashSet<int>();
+
+        public int ActiveTargetCount => activeTargetInstances.Count;
+        public IReadOnlyList<GameObject> ActiveTargets => activeTargetInstances;
 
         private void Awake()
         {
@@ -54,7 +65,13 @@ namespace IVRAR.Group02.SensoryStress
             originalFogEnabled = RenderSettings.fog;
             originalAmbientIntensity = RenderSettings.ambientIntensity;
             if (sceneDirectionalLight != null) originalDirectionalIntensity = sceneDirectionalLight.intensity;
-            if (traineeFlashlight != null) originalFlashlightIntensity = traineeFlashlight.intensity;
+            if (traineeFlashlight != null)
+            {
+                originalFlashlightIntensity = traineeFlashlight.intensity > 0.5f ? traineeFlashlight.intensity : 2.5f;
+                traineeFlashlight.intensity = originalFlashlightIntensity;
+                traineeFlashlight.range = 45f;
+                traineeFlashlight.spotAngle = 60f;
+            }
             if (peripheralStrobeLight != null) { originalStrobeIntensity = peripheralStrobeLight.intensity; peripheralStrobeLight.enabled = false; }
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.ExponentialSquared;
@@ -69,21 +86,21 @@ namespace IVRAR.Group02.SensoryStress
         public void ApplySensoryStressorEnvelope(float intensityFactor, Vector3 illuminatedPoint)
         {
             float intensity = Mathf.Clamp01(intensityFactor);
-            // Unity's built-in exponential fog is a performant distance-fog approximation, not volumetric lighting.
             RenderSettings.fog = true;
-            RenderSettings.fogDensity = Mathf.Clamp(fogExtinctionPerMeter * intensity, 0f, 0.2f);
-            if (sceneDirectionalLight != null) sceneDirectionalLight.intensity = Mathf.Lerp(0.05f, 0.35f, intensity);
+            RenderSettings.fogDensity = Mathf.Clamp(fogExtinctionPerMeter * intensity, 0f, 0.05f);
+            if (sceneDirectionalLight != null) sceneDirectionalLight.intensity = Mathf.Lerp(0.08f, 0.25f, intensity);
+
             if (traineeFlashlight != null)
             {
                 float distance = Vector3.Distance(traineeFlashlight.transform.position, illuminatedPoint);
-                Vector3 toTarget = (illuminatedPoint - traineeFlashlight.transform.position).normalized;
+                Vector3 toTarget = distance > 0.001f ? (illuminatedPoint - traineeFlashlight.transform.position).normalized : traineeFlashlight.transform.forward;
                 float cosTheta = Mathf.Max(0f, Vector3.Dot(traineeFlashlight.transform.forward, toTarget));
                 float r = Mathf.Max(0.25f, distance);
                 float illuminance = (referenceIlluminanceLux * Mathf.Pow(referenceFlashlightDistance, 2f) * cosTheta / (r * r)) *
-                                    Mathf.Exp(-fogExtinctionPerMeter * r);
-                traineeFlashlight.intensity = Mathf.Clamp(illuminance, 0f, originalFlashlightIntensity * 2f);
+                                     Mathf.Exp(-fogExtinctionPerMeter * r);
+                traineeFlashlight.intensity = Mathf.Clamp(illuminance, 1.5f, originalFlashlightIntensity * 2f);
             }
-            if (stressAudioSource != null && !stressAudioSource.isPlaying && random.NextDouble() < 0.35 * intensity)
+            if (stressAudioSource != null && !stressAudioSource.isPlaying && random.NextDouble() < 0.20 * intensity)
             {
                 AudioClip clip = random.NextDouble() < 0.5 ? gunshotClip : sirenAlarmClip;
                 if (clip != null)
@@ -101,12 +118,12 @@ namespace IVRAR.Group02.SensoryStress
         private IEnumerator PeripheralStrobe(float intensity)
         {
             strobeRunning = true;
-            int pulses = random.Next(1, Mathf.Min(strobePulseCount, 6) + 1);
+            int pulses = random.Next(1, Mathf.Min(strobePulseCount, 4) + 1);
             float halfPeriod = 0.5f / Mathf.Clamp(strobeFrequencyHz, 1f, 6f);
             yield return new WaitForSeconds((float)random.NextDouble() * halfPeriod);
             for (int i = 0; i < pulses; i++)
             {
-                peripheralStrobeLight.intensity = Mathf.Min(maximumStrobeIntensity * intensity, 0.2f);
+                peripheralStrobeLight.intensity = Mathf.Min(maximumStrobeIntensity * intensity, 0.15f);
                 peripheralStrobeLight.enabled = true;
                 yield return new WaitForSeconds(halfPeriod);
                 peripheralStrobeLight.enabled = false;
@@ -115,57 +132,131 @@ namespace IVRAR.Group02.SensoryStress
             strobeRunning = false;
         }
 
-        public void SpawnRandomizedTarget(int trialIndex)
+        public void StartMultiTargetSession(int concurrentCount)
         {
-            if (spawnAnchors == null || spawnAnchors.Length == 0) return;
-            int anchorIndex = random.Next(spawnAnchors.Length);
-            Transform anchor = spawnAnchors[anchorIndex];
-            if (anchor == null) return;
-            bool hostile = random.NextDouble() < hostileProbability;
+            isScenarioActive = true;
+            maxConcurrentTargets = Mathf.Clamp(concurrentCount, 1, spawnAnchors != null ? spawnAnchors.Length : 10);
+            ClearAllTargets();
+
+            // Populate arena with initial wave up to maxConcurrentTargets
+            for (int i = 0; i < maxConcurrentTargets; i++)
+            {
+                // Ensure at least 1-2 civilians in the initial batch
+                bool forceCiv = (i == 2 || i == 7);
+                SpawnNextAvailableTarget(forceCiv ? false : (bool?)null);
+            }
+        }
+
+        public GameObject SpawnNextAvailableTarget(bool? forceHostile = null)
+        {
+            if (spawnAnchors == null || spawnAnchors.Length == 0) return null;
+            if (random == null) random = new System.Random(randomSeed);
+
+            // Find all unoccupied anchor indices
+            List<int> freeIndices = new List<int>();
+            for (int i = 0; i < spawnAnchors.Length; i++)
+            {
+                if (!occupiedAnchorIndices.Contains(i) && spawnAnchors[i] != null)
+                    freeIndices.Add(i);
+            }
+
+            if (freeIndices.Count == 0) return null; // all anchors occupied
+
+            int chosenIndex = freeIndices[random.Next(freeIndices.Count)];
+            Transform anchor = spawnAnchors[chosenIndex];
+
+            bool hostile = forceHostile.HasValue ? forceHostile.Value : (random.NextDouble() < hostileProbability);
             GameObject prefab = hostile ? hostileTargetPrefab : civilianTargetPrefab;
-            if (prefab == null) return;
+            if (prefab == null) return null;
 
             GameObject target = Instantiate(prefab, anchor.position, anchor.rotation);
-            string trialId = "trial-" + trialIndex.ToString("D4");
+            string trialId = "trial-" + (++nextTrialIndex).ToString("D4");
             float distance = Vector3.Distance(transform.position, anchor.position);
             Vector3 relative = anchor.position - transform.position;
             float angle = Vector3.SignedAngle(transform.forward, relative, Vector3.up);
-            if (telemetryLogger != null) telemetryLogger.RegisterTargetPresentation(trialId, hostile, distance, angle);
+
+            if (telemetryLogger != null)
+                telemetryLogger.RegisterTargetPresentation(trialId, hostile, distance, angle);
+
             TargetTrialMetadata metadata = target.GetComponent<TargetTrialMetadata>();
             if (metadata == null) metadata = target.AddComponent<TargetTrialMetadata>();
             metadata.Initialize(trialId, hostile, distance, angle, telemetryLogger, Time.realtimeSinceStartupAsDouble);
+            metadata.AnchorIndex = chosenIndex;
             metadata.StartExposureTimeout(exposureDurationSeconds);
-            ApplySensoryStressorEnvelope(1f, anchor.position);
+
+            // Overhead stylized arcade badge
+            GameObject badgeObj = new GameObject("Arcade_Badge");
+            badgeObj.transform.SetParent(target.transform, false);
+            badgeObj.transform.localPosition = new Vector3(0f, 1.25f, 0f);
+            if (Camera.main != null)
+                badgeObj.transform.rotation = Camera.main.transform.rotation;
+            else
+                badgeObj.transform.localRotation = Quaternion.identity;
+
+            TextMesh tmText = badgeObj.AddComponent<TextMesh>();
+            tmText.text = hostile ? "[ HOSTILE ]" : "[ CIVILIAN ]";
+            tmText.characterSize = 0.05f;
+            tmText.fontSize = 48;
+            tmText.anchor = TextAnchor.MiddleCenter;
+            tmText.alignment = TextAlignment.Center;
+            tmText.color = hostile ? new Color(1f, 0.2f, 0.2f) : new Color(0.2f, 0.8f, 1f);
+
+            occupiedAnchorIndices.Add(chosenIndex);
+            activeTargetInstances.Add(target);
+
+            return target;
+        }
+
+        public void SpawnRandomizedTarget(int trialIndex)
+        {
+            SpawnNextAvailableTarget();
+        }
+
+        public void OnTargetRemoved(int anchorIndex, GameObject target)
+        {
+            if (anchorIndex >= 0)
+                occupiedAnchorIndices.Remove(anchorIndex);
+
+            activeTargetInstances.Remove(target);
+
+            // If scenario is active and active count dropped below max, schedule replacement
+            if (isScenarioActive && activeTargetInstances.Count < maxConcurrentTargets)
+            {
+                StartCoroutine(SpawnReplacementDelayed(0.4f));
+            }
+        }
+
+        private IEnumerator SpawnReplacementDelayed(float delay)
+        {
+            yield return new WaitForSeconds(delay);
+            if (isScenarioActive && activeTargetInstances.Count < maxConcurrentTargets)
+            {
+                SpawnNextAvailableTarget();
+            }
+        }
+
+        public void ClearAllTargets()
+        {
+            var existing = FindObjectsOfType<TargetTrialMetadata>();
+            foreach (var t in existing)
+            {
+                if (t != null) Destroy(t.gameObject);
+            }
+            activeTargetInstances.Clear();
+            occupiedAnchorIndices.Clear();
         }
 
         public void StartTrialSequence()
         {
-            if (isScenarioActive) return;
-            isScenarioActive = true;
-            nextTrialIndex = 0;
-            scenarioCoroutine = StartCoroutine(SpawnSequence());
+            StartMultiTargetSession(maxConcurrentTargets);
         }
-
-        private IEnumerator SpawnSequence()
-        {
-            while (isScenarioActive)
-            {
-                // Exponential inter-arrival intervals produce a Poisson process.
-                double u = MathMax(random.NextDouble(), 1e-9);
-                float waitSeconds = (float)(-System.Math.Log(u) * Mathf.Max(0.1f, meanInterTargetIntervalSeconds));
-                yield return new WaitForSeconds(waitSeconds);
-                if (!isScenarioActive) yield break;
-                SpawnRandomizedTarget(++nextTrialIndex);
-            }
-        }
-
-        private static double MathMax(double a, double b) => a > b ? a : b;
 
         public void TerminateTrialSequence()
         {
             isScenarioActive = false;
             if (scenarioCoroutine != null) StopCoroutine(scenarioCoroutine);
             StopAllCoroutines();
+            ClearAllTargets();
             strobeRunning = false;
             if (peripheralStrobeLight != null) { peripheralStrobeLight.enabled = false; peripheralStrobeLight.intensity = originalStrobeIntensity; }
             RenderSettings.fogDensity = originalFogDensity;
